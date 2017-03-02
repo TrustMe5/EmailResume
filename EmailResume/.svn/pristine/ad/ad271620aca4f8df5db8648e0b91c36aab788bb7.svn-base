@@ -1,0 +1,31 @@
+package org.emailresume;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
+
+public class DBEmailResume {
+    private static DBEmailResume m_instance = new DBEmailResume();
+
+    public static DBEmailResume getInstance() {
+        return m_instance;
+    }
+
+    public void saveOneRecord(String collectTime, String fastdfsTime, String parseTime, String fastdfsUrl, String mongoID, String parseError, String email){
+        try {
+            Connection conn = null;
+            String url = "jdbc:mysql://192.168.6.65:3306/emailresume?"
+                    + "user=root&password=root&useUnicode=true&characterEncoding=UTF8";
+            Class.forName("com.mysql.jdbc.Driver");
+            conn = DriverManager.getConnection(url);
+            Statement stmt = conn.createStatement();
+            String sql = String.format("insert into emaildata (collect_time, fastdfs_time, parse_time, fastdfs_url, mongo_id, parse_error, email_source)" +
+                                        "values ('%s','%s','%s','%s','%s','%s','%s')", collectTime, fastdfsTime, parseTime, fastdfsUrl, mongoID, parseError, email);
+            stmt.executeUpdate(sql);
+            stmt.close();
+            conn.close();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+}

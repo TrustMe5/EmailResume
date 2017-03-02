@@ -1,0 +1,6 @@
+package org.emailresume.htmlparser;
+
+
+public interface Parser {
+     boolean parse(String fileContent, ResumeWrapper wrapper);
+}

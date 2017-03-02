@@ -1,0 +1,92 @@
+package org.emailresume.controller;
+
+import org.apache.log4j.Logger;
+import org.emailresume.common.POP3Worker;
+import org.emailresume.common.Utils;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+
+@RestController
+public class VerifyController {
+    private static final Logger logger = Logger.getLogger(VerifyController.class);
+    private final String m_url = "jdbc:mysql://192.168.6.80:3306/email_resume?" + "user=root&password=root&useUnicode=true&characterEncoding=UTF8";
+
+    private String m_email;
+    private String m_password;
+    private String m_channel;
+
+    @RequestMapping(value = "/verify", method = RequestMethod.POST)
+    public String verify(@RequestParam(value="email") String email,
+                         @RequestParam(value="password") String password,
+                         @RequestParam(value="channel") String channel) {
+
+        logger.info(String.format("验证 %s, %s", email, password));
+        if(email.equals("") || password.equals("") || channel.equals("")){
+            return getResultJson("0", "输入参数错误");
+        }
+
+        m_email = email;
+        m_password = password;
+        m_channel = channel;
+        String resultJson;
+        POP3Worker worker = new POP3Worker();
+        boolean b = worker.connect(email, password);
+        if(!b){
+            resultJson = getResultJson("0", "登陆邮箱失败");
+        }else {
+            if(!worker.verify()){
+                resultJson = getResultJson("0", "验证失败");
+            }
+            else{
+                resultJson = getResultJson("1", "验证成功");
+            }
+        }
+        worker.clean();
+        return resultJson;
+    }
+
+    private String getResultJson(String status, String msg){
+        if(!m_email.equals("")){
+            //将数据保存到数据库
+            Connection conn = null;
+            try {
+                String currentTime = Utils.getCurrentDateTime();
+                Class.forName("com.mysql.jdbc.Driver");
+                conn = DriverManager.getConnection(m_url);
+                Statement stmt = conn.createStatement();
+
+                String sql = String.format("select email from emailinfo where email = '%s' and verify = '%s'",
+                                            m_email, status);
+                ResultSet rs = stmt.executeQuery(sql);
+                if(rs.next()){
+                    sql = String.format("update emailinfo set password = '%s', verify = '%s', verify_info = '%s', verify_time ='%s', channel = '%s' where email = '%s'",
+                            m_password, status, msg, currentTime, m_channel, m_email);
+                }else{
+                    sql = String.format("insert into emailinfo (email, password, verify, verify_info, verify_time, channel) values ('%s', '%s', '%s', '%s', '%s', '%s')",
+                            m_email, m_password, status, msg, currentTime, m_channel);
+                }
+
+                stmt.executeUpdate(sql);
+                stmt.close();
+            }catch (Exception e){
+                logger.error(e.toString());
+            }finally {
+                try {
+                    if(conn != null)
+                        conn.close();
+                }catch (Exception e){
+                    logger.error(e.toString());
+                }
+            }
+        }
+
+        return String.format("{\"status\" : \"%s\", \"message\" : \"%s\"}", status, msg);
+    }
+}

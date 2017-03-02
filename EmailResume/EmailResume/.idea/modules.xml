@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/Collector/Collector.iml" filepath="$PROJECT_DIR$/Collector/Collector.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Common/Common.iml" filepath="$PROJECT_DIR$/Common/Common.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Core/Core.iml" filepath="$PROJECT_DIR$/Core/Core.iml" />
+      <module fileurl="file://$PROJECT_DIR$/EmailResume.iml" filepath="$PROJECT_DIR$/EmailResume.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Collector/EmailResume.Collector.iml" filepath="$PROJECT_DIR$/Collector/EmailResume.Collector.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Common/EmailResume.Common.iml" filepath="$PROJECT_DIR$/Common/EmailResume.Common.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Core/EmailResume.Core.iml" filepath="$PROJECT_DIR$/Core/EmailResume.Core.iml" />
+      <module fileurl="file://$PROJECT_DIR$/HtmlParser/EmailResume.HtmlParser.iml" filepath="$PROJECT_DIR$/HtmlParser/EmailResume.HtmlParser.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Web/EmailResume.Web.iml" filepath="$PROJECT_DIR$/Web/EmailResume.Web.iml" />
+      <module fileurl="file://$PROJECT_DIR$/HtmlParser/HtmlParser.iml" filepath="$PROJECT_DIR$/HtmlParser/HtmlParser.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Web/Web.iml" filepath="$PROJECT_DIR$/Web/Web.iml" />
+    </modules>
+  </component>
+</project>

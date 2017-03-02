@@ -1,0 +1,4 @@
+org\emailresume\collector\DBEmailCollector.class
+org\emailresume\collector\Worker.class
+org\emailresume\collector\Main.class
+org\emailresume\collector\DBEmailInfo.class

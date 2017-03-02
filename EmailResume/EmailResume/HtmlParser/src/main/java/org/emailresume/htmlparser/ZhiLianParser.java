@@ -1,0 +1,788 @@
+package org.emailresume.htmlparser;
+
+import org.apache.log4j.Logger;
+import org.htmlcleaner.*;
+
+import java.util.*;
+import org.apache.commons.lang.StringEscapeUtils;
+import org.emailresume.common.TransferStringToTimeStamp;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+
+import javax.rmi.CORBA.Util;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
+
+public class ZhiLianParser  implements Parser{
+    private static final org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(ZhiLianParser.class);
+
+    final static Integer m_sid = 1;
+    HtmlCleaner cleaner = new HtmlCleaner();
+
+    public  boolean parse(String filePath, ResumeWrapper resume){
+        String htmlContent = org.emailresume.common.Utils.readFileByBytes(filePath);
+        boolean parseResult = true;
+        try {
+            CleanerProperties props = cleaner.getProperties();
+            props.setTransSpecialEntitiesToNCR(true);
+            props.setUseCdataForScriptAndStyle(true);
+            props.setRecognizeUnicodeChars(true);
+            props.setUseEmptyElementTags(true);
+            props.setAdvancedXmlEscape(true);
+            props.setTranslateSpecialEntities(true);
+            props.setBooleanAttributeValues("empty");
+
+            TagNode htmlNode = cleaner.clean(htmlContent);
+            Document doc = new DomSerializer(new CleanerProperties()).createDOM(htmlNode);
+
+            String markXpath = "//a[contains(text(),'暂不合适')][@style='font-size:14px;color:#ffffff;text-decoration:none;']";
+            XPath xpath = XPathFactory.newInstance().newXPath();
+            Node node = (Node) xpath.evaluate(markXpath, doc, XPathConstants.NODE);
+            //Object[] ns = htmlNode.evaluateXPath(markXpath);
+            if(node != null){
+                parseResult = template(htmlNode, resume);
+            }else{
+                parseResult = template2(htmlNode, resume);
+            }
+
+
+        }catch (Exception e){
+            parseResult = false;
+            logger.error(org.emailresume.common.Utils.getExceptionString(e));
+        }
+
+        return parseResult;
+    }
+
+    //较新的简历模板
+    private boolean template(TagNode htmlNode, ResumeWrapper resume) throws Exception{
+        String m_idXpath = "/body/span[@style='display:none;']";
+
+        String m_selfAssessmentXpath = "//span[text()='自我评价'][@style='color:#ffffff;font-size:14px;']";
+        String m_jobIntentionXPath = "//span[text()='求职意向'][@style='color:#ffffff;font-size:14px;']";
+        String m_alinkXpath = "//a[text()='我要联系TA']";
+        String m_contactXpath = "//td[@style='background:#2f9ddf;border-radius:4px;word-break: break-all; word-wrap:break-word;padding-left:5px;padding-bottom:5px;']";
+        String m_contactXpath2 = "//td[@style='background:#2f9ddf;border-radius:4px;word-break: break-all; word-wrap:break-word;']";
+        String m_workXpath = "//span[text()='工作经历'][@style='color:#ffffff;font-size:14px;']";
+        String m_educationXpath = "//span[text()='教育经历'][@style='color:#ffffff;font-size:14px;']";
+        String m_languageXpath = "//span[text()='语言能力'][@style='color:#ffffff;font-size:14px;']";
+        String m_projectXpath = "//span[text()='项目经验'][@style='color:#ffffff;font-size:14px;']";
+
+        String email = "";
+        String phone = "";
+        Object[] ns = htmlNode.evaluateXPath(m_alinkXpath);
+        if(ns.length == 0){
+            ns = htmlNode.evaluateXPath(m_contactXpath);
+            if(ns.length == 0){
+                ns = htmlNode.evaluateXPath(m_contactXpath2);
+            }
+            TagNode n = (TagNode) ns[0];
+            TagNode [] list = n.getElementsByName("p", false);
+            if(list.length == 1){
+                phone = list[0].getText().toString().trim();
+            }
+            list = n.getElementsByName("span", false);
+            if(list.length == 1){
+                email = list[0].getText().toString().trim();
+            }
+        }else{
+            try{
+                TagNode n = (TagNode) ns[0];
+                String url = n.getAttributeByName("href");
+                url = url.substring(url.indexOf("url") + 4);
+                String contactResult = org.emailresume.common.HttpRequest.sendGet(url, "");
+                TagNode contactHtmlNode = cleaner.clean(contactResult);
+                ns = contactHtmlNode.evaluateXPath("/body/div/div/p[2]/span/a");
+                phone = ((TagNode)ns[0]).getText().toString().trim();
+                ns = contactHtmlNode.evaluateXPath("/body/div/div/p[3]/span/a");
+                email = ((TagNode)ns[0]).getText().toString().trim();
+            }catch (Exception e){
+                logger.error("联系方式获取失败");
+            }
+
+        }
+
+        ResumeWrapper.TResume_info resumeInfo = resume.getResume_info();
+        resumeInfo.setMobilephone(phone);
+        resumeInfo.setEmail(email);
+
+        //简历ID
+        ns = htmlNode.evaluateXPath(m_idXpath);
+        TagNode n = (TagNode) ns[0];
+        String srid = "";
+        try{
+            srid = n.getText().toString().trim().substring(3);
+            if(srid.length() > 80){
+                srid = "";
+                logger.warn("简历ID异常");
+            }
+            resume.getMeta_info().getResume_tags().setSrid(srid);
+        }catch (Exception e){
+            logger.error("没有简历ID");
+        }
+
+
+        //
+        resume.setCreate_time(Utils.getCurrentTimestamp());
+
+        //基本信息，姓名，手机等
+        ns = htmlNode.evaluateXPath("//div[@class='photo']");
+        n = (TagNode) ns[0];
+        n = n.getParent().getParent();
+
+        ns = n.evaluateXPath("/td/table/tbody");
+        n = (TagNode) ns[0];
+
+        List<TagNode> childList = n.getChildTagList();
+        String name = childList.get(0).getText().toString().trim();
+        resumeInfo.setName(name);
+        resume.getMeta_info().getResume_tags().setEmail(email);
+        resume.getMeta_info().getResume_tags().setName_mobile(name + "+" + phone);
+        TagNode baseInfoNode = childList.get(1);
+        childList.clear();
+        List<? extends BaseToken> ls = baseInfoNode.getChildTagList().get(0).getAllChildren();
+        for(BaseToken token : ls){
+            if(token instanceof TagNode){
+                TagNode node = (TagNode)token;
+                if(node.getName().equals("font")){
+                    String value = node.getText().toString().trim();
+                    if(value.equals("男") || value.equals("女")){
+                        resumeInfo.setGender_cnt(value);
+                        resumeInfo.setGender(Utils.getGenderCodeFromString(value));
+                    }else if(value.contains("年") && value.contains("月")){
+                        resumeInfo.setBirthday_cnt (value);
+                        resumeInfo.setBirthday(Utils.parseTime(value, "yyyy年MM月"));
+                    }
+                }
+            }else if(token instanceof ContentNode){
+                ContentNode node = (ContentNode) token;
+                String value = node.getContent().toString().trim();
+                if(value.contains("现")){
+                    //现居住地
+                    value = value.substring(4);
+                    resumeInfo.setCur_city_cnt(value);
+                    if(value.contains(" ")){
+                        resumeInfo.setCur_city_id(Utils.getCityCodeFromString(resumeInfo.getCur_city_cnt().split(" ")[1]));
+                    }else if(value.contains("-")){
+                        String[] cityList = value.split("-");
+                        for (String city : cityList) {
+                            resumeInfo.setCur_city_id(Utils.getCityCodeFromString(city));
+                        }
+                    } else{
+                        resumeInfo.setCur_city_id(Utils.getCityCodeFromString(value));
+                    }
+                }else if(value.endsWith("户口")){
+                    //户口
+                    value = value.substring(0, value.length() - 2);
+                    resumeInfo.setHukou_cnt(value);
+                    if(value.contains("-")){
+                        String[] cityList = value.split("-");
+                        for (String city : cityList) {
+                            resumeInfo.setHukou(Utils.getCityCodeFromString(city));
+                        }
+                    }else{
+                        resumeInfo.setHukou(Utils.getCityCodeFromString(value));
+                    }
+                }
+            }
+        }
+
+
+        resume.setResume_info(resumeInfo);
+
+        ns = htmlNode.evaluateXPath(m_selfAssessmentXpath);
+        if(ns.length == 0){
+            //logger.warn("没有自我评价 ");
+        }else{
+            String selfAssessment = ((TagNode)ns[0]).getParent().getParent().getParent().getParent().getParent().getChildTagList().get(1).getText().toString().trim();
+            List<ResumeWrapper.TResume_info.TSelf_assessment> self_assessments = resumeInfo.getSelf_assessment();
+            ResumeWrapper.TResume_info.TSelf_assessment tSelfAssessment = new ResumeWrapper.TResume_info.TSelf_assessment();
+            tSelfAssessment.setContent(selfAssessment);
+            tSelfAssessment.setContent_type("自我评价");
+            self_assessments.add(tSelfAssessment);
+        }
+
+        //投递信息
+        ResumeWrapper.TDeliver_info deliverInfo = new ResumeWrapper.TDeliver_info();
+        deliverInfo.setSrid(srid);
+        deliverInfo.setSid(m_sid);
+        resume.getDeliver_info().add(deliverInfo);
+        ns = htmlNode.evaluateXPath(m_jobIntentionXPath);
+        if(ns.length == 0){
+            //logger.warn("没有求职意向");
+        }else{
+            try{
+                n = ((TagNode)ns[0]).getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3).getChildTagList().get(0);
+                childList.clear();
+                childList = n.getChildTagList();
+                String jobCity = childList.get(0).getChildTagList().get(1).getText().toString();
+                String jobNature = childList.get(1).getChildTagList().get(1).getText().toString();
+                String job = childList.get(2).getChildTagList().get(1).getText().toString();
+                List<String> jobCntList = new ArrayList<String>();
+                List<String> jobCodeList = new ArrayList<String>();
+                String[] newstr = job.split("、");
+                for(int i =0;i<newstr.length;i++){
+                    jobCntList.add(newstr[i]);
+                    jobCodeList.add(Utils.getJobCodeFromString(newstr[i]));
+                }
+                String jobSalary = childList.get(3).getChildTagList().get(1).getText().toString();
+                String jobState = childList.get(4).getChildTagList().get(1).getText().toString();
+                String jobTrade = childList.get(5).getChildTagList().get(1).getText().toString();
+                List<String> jobTradeCntList = new ArrayList<String>();
+                List<String> jobTradeCodeList = new ArrayList<String>();
+                newstr = jobTrade.split("、");
+                for(int i =0;i<newstr.length;i++){
+                    jobTradeCntList.add(newstr[i]);
+                    jobTradeCodeList.add(Utils.getJobTradeCodeFromString(newstr[i]));
+                }
+
+
+                ResumeWrapper.TDeliver_info.TJob_intension jobIntension = new ResumeWrapper.TDeliver_info.TJob_intension();
+                jobIntension.setState_cnt(jobState);
+                jobIntension.setJob_nature(Utils.getJobNatureCodeFromString(jobNature));
+                jobIntension.setJob_nature_cnt(jobNature);
+
+                List<String> cityCnts = new ArrayList<String>();
+                List<String> cities = new ArrayList<String>();
+                newstr = jobCity.split("、");
+                for(int i =0;i<newstr.length;i++){
+                    cityCnts.add(newstr[i]);
+                    cities.add(String.valueOf(Utils.getCityCodeFromString(newstr[i])));
+                }
+                jobIntension.setCity(cities);
+                jobIntension.setCity_cnt(cityCnts);
+
+                jobIntension.setJob(jobCodeList);
+                jobIntension.setJob_cnt(jobCntList);
+
+                jobIntension.setHope_salary_cnt(jobSalary);
+
+                jobIntension.setTrade(jobTradeCodeList);
+                jobIntension.setTrade_cnt(jobTradeCntList);
+
+                deliverInfo.setJob_intension(jobIntension);
+            }catch (Exception e){
+                logger.error("求职意向解析失败");
+            }
+        }
+
+
+        //工作经历
+        String firstJobTime = "";
+        Long firstJobTimestamp = new Long(0);
+        String lastJobTime = "";
+        Long lastJobTimestamp = new Long(0);
+        ns = htmlNode.evaluateXPath(m_workXpath);
+        if(ns.length == 0){
+            //logger.warn("没有工作经历");
+        }else{
+            List<ResumeWrapper.TResume_info.TWork> works = resumeInfo.getWork();
+            List<ResumeWrapper.TResume_info.TWork_cnt> workCnts = resumeInfo.getWork_cnt();
+            n = (TagNode)ns[ns.length - 1];
+            n = n.getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3);
+            n = n.getChildTagList().get(0);
+            childList.clear();
+            childList = n.getChildTagList();
+            for(TagNode node : childList){
+                ResumeWrapper.TResume_info.TWork work = new ResumeWrapper.TResume_info.TWork();
+                ns = node.evaluateXPath("/td/table/tbody/tr[1]");
+                n = (TagNode)ns[0];
+                String workContent = n.getText().toString().replaceAll(" ", "").trim();
+                String[] time = n.getChildTagList().get(0).getText().toString().split("-");
+                String stime = time[0].trim();
+                String etime = time[1].trim();
+                String company = n.getChildTagList().get(1).getChildTagList().get(0).getText().toString().trim();
+
+                ns = node.evaluateXPath("/td/table/tbody/tr[2]");
+                n = (TagNode)ns[0];
+                workContent += " ";
+                workContent += n.getText().toString().replaceAll(" ", "").trim();
+                n = n.getChildTagList().get(1);
+                String jobOfWork = n.getChildTagList().get(0).getText().toString().trim();
+                if(n.getChildTagList().size() >= 3){
+                    String salaryOfWork = n.getChildTagList().get(2).getText().toString().trim();
+
+                    if(salaryOfWork.contains("-")){
+                        work.setSalary_from(Utils.GetNumFromString(salaryOfWork.split("-")[0]));
+                        work.setSalary_to(Utils.GetNumFromString(salaryOfWork.split("-")[1]));
+                    }
+
+                    work.setSalary_cnt(salaryOfWork);
+                }
+
+                ns = node.evaluateXPath("/td/table/tbody/tr[3]");
+                n = (TagNode)ns[0];
+                workContent += " ";
+                workContent += n.getText().toString().replaceAll(" ", "").trim();
+                n = n.getChildTagList().get(1);
+                String tradeCntOfWork = n.getChildTagList().get(0).getText().toString();
+                if(n.getChildTagList().size() >=3){
+                    String companyTypeCntOfWork = n.getChildTagList().get(2).getText().toString().split("：")[1].trim();
+                    work.setCompany_type_cnt(companyTypeCntOfWork);
+                }
+                if(n.getChildTagList().size() >=5){
+                    String companySizeCntOfWork = n.getChildTagList().get(4).getText().toString().split("：")[1].trim();
+                    work.setCompany_size_cnt(companySizeCntOfWork);
+
+                }
+
+
+                ns = node.evaluateXPath("/td/table/tbody/tr[4]");
+                n = (TagNode)ns[0];
+                workContent += " ";
+                workContent += n.getText().toString().replaceAll(" ", "").trim();
+                String jobDescriptionXpath = "/td[2]/p/text()";
+                ns = n.evaluateXPath(jobDescriptionXpath);
+                String jobDescriptionOfWork = ns[0].toString().substring(5).trim();
+
+
+                work.setCompany(company);
+                work.setStime(Utils.parseZhiLianTime(stime));
+                work.setEtime(Utils.parseZhiLianTime(etime));
+                if(firstJobTimestamp == 0){
+                    firstJobTime = stime;
+                    firstJobTimestamp = work.getStime();
+                }else{
+                    if(work.getStime() < firstJobTimestamp){
+                        firstJobTime = stime;
+                        firstJobTimestamp = work.getStime();
+                    }
+                }
+                if(lastJobTimestamp == 0){
+                    lastJobTime = etime;
+                    lastJobTimestamp = work.getEtime();
+                }else{
+                    if(work.getEtime() > lastJobTimestamp){
+                        lastJobTime = etime;
+                        lastJobTimestamp = work.getEtime();
+                    }
+                }
+
+                work.setJob_description(jobDescriptionOfWork);
+                work.setJob(jobOfWork);
+                work.setTrade(Utils.getJobTradeCodeFromString(tradeCntOfWork));
+                work.setTrade_cnt(tradeCntOfWork);
+                work.setTime_cnt(stime + " - " + etime);
+                works.add(work);
+
+                ResumeWrapper.TResume_info.TWork_cnt workCnt = new ResumeWrapper.TResume_info.TWork_cnt();
+                workCnt.setContent(workContent);
+                workCnts.add(workCnt);
+            }
+        }
+        resumeInfo.setFst_job_date(firstJobTimestamp);
+        resumeInfo.setFst_job_date_cnt(firstJobTime);
+        resumeInfo.setLst_job_date(lastJobTimestamp);
+        resumeInfo.setLst_job_date_cnt(lastJobTime);
+
+        //教育经历
+        ns = htmlNode.evaluateXPath(m_educationXpath);
+        if(ns.length == 0){
+            //logger.warn("没有教育经历");
+        }else {
+            List<ResumeWrapper.TResume_info.TEducation> educations = resumeInfo.getEducation();
+            n = (TagNode)ns[0];
+            n = n.getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3).getChildTagList().get(0);
+
+            ns = n.evaluateXPath("tr/td/table/tbody");
+            n = (TagNode)ns[0];
+            childList.clear();
+            childList = n.getChildTagList();
+            String educationStr = "";
+            for(TagNode node : childList){
+                String[] time = node.getChildTagList().get(0).getText().toString().split("-");
+                String stime = time[0].trim();
+                String etime = time[1].trim();
+
+                TagNode infoNode = node.getChildTagList().get(1);
+                List<TagNode> infoList = infoNode.getChildTagList();
+                String school = StringEscapeUtils.unescapeHtml(infoList.get(0).getText().toString()).trim();
+                String speciality = StringEscapeUtils.unescapeHtml(infoList.get(1).getText().toString()).trim().replace("\u00a0", "");
+
+                String backgdCnt = StringEscapeUtils.unescapeHtml(infoList.get(infoList.size() - 1).getText().toString()).trim().replace("\u00a0", "");
+
+                ResumeWrapper.TResume_info.TEducation education = new ResumeWrapper.TResume_info.TEducation();
+                education.setStime(Utils.parseZhiLianTime(stime));
+                education.setEtime(Utils.parseZhiLianTime(etime));
+                education.setTime_cnt(stime + " - " + etime);
+                education.setBackgd(Utils.getBackgdCodeFromString(backgdCnt).toString());
+                education.setBackgd_cnt(backgdCnt);
+                education.setSchool(school);
+                education.setSpeciality(speciality);
+
+                educations.add(education);
+
+                educationStr +=stime + " - " + etime + " " + school + " " + speciality + " " + backgdCnt + " ";
+            }
+
+            resumeInfo.setEducation_cnt(educationStr);
+        }
+
+        ns = htmlNode.evaluateXPath(m_languageXpath);
+        if(ns.length == 0){
+            //logger.warn("没有语言能力 ");
+        }else{
+            n = (TagNode)ns[0];
+            n = n.getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3).getChildTagList().get(0);
+
+            ns = n.evaluateXPath("tr/td/table/tbody");
+            n = (TagNode)ns[0];
+            childList.clear();
+            childList = n.getChildTagList();
+            for(TagNode node : childList){
+                ResumeWrapper.TResume_info.TLanguage language = new ResumeWrapper.TResume_info.TLanguage();
+                node = node.getChildTagList().get(0);
+                String languageCnt = node.getChildTagList().get(0).getText().toString().trim().substring(0, 2);
+                language.setLang_cnt(languageCnt);
+                if(languageCnt.contains("其他")){
+                    continue;
+                }
+                if(node.getChildTagList().size() >= 2){
+                    String literacyCnt = node.getChildTagList().get(1).getText().toString();
+                    literacyCnt = literacyCnt.substring(literacyCnt.length() - 2);
+                    language.setLiteracy_cnt(literacyCnt);
+                }
+
+                if(node.getChildTagList().size() >= 4){
+                    String verbalCnt = node.getChildTagList().get(3).getText().toString();
+                    verbalCnt = verbalCnt.substring(verbalCnt.length() - 2);
+                    language.setVerbal_cnt(verbalCnt);
+                }
+                resumeInfo.getLanguage().add(language);
+            }
+        }
+
+
+        ns = htmlNode.evaluateXPath(m_projectXpath);
+        if(ns.length == 0){
+            //logger.warn("没有项目经验 ");
+        }else{
+            n = (TagNode)ns[0];
+            n = n.getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3).getChildTagList().get(0);
+            childList.clear();
+            childList = n.getChildTagList();
+            for(TagNode node : childList){
+                ns = node.evaluateXPath("/td/table/tbody/tr[1]");
+                n = (TagNode)ns[0];
+                String[] time = n.getChildTagList().get(0).getText().toString().split("-");
+                String stime = time[0].trim();
+                String etime = time[1].trim();
+                String projectName = n.getChildTagList().get(1).getChildTagList().get(0).getText().toString().trim();
+                ResumeWrapper.TResume_info.TProjects project = new ResumeWrapper.TResume_info.TProjects();
+                project.setTime_cnt(stime + "-" + etime);
+                project.setStime(TransferStringToTimeStamp.transferStringToTimeStamp(stime));
+                project.setEtime(TransferStringToTimeStamp.transferStringToTimeStamp(etime));
+                project.setProject_name(projectName);
+
+                ns = node.evaluateXPath("/td/table/tbody/tr[2]");
+                n = (TagNode)ns[0];
+                String duty = n.getChildTagList().get(1).getText().toString().substring(5);
+                project.setDuty(duty);
+
+                ns = node.evaluateXPath("/td/table/tbody/tr[3]");
+                n = (TagNode)ns[0];
+                String description = n.getChildTagList().get(1).getText().toString().substring(5);
+                project.setDescription(description);
+
+                resumeInfo.getProjects().add(project);
+
+            }
+        }
+
+        return true;
+    }
+
+    private boolean template2(TagNode htmlNode, ResumeWrapper resume) throws Exception{
+        String m_idXpath = "/body/span[@style='display:none;']";
+
+        String nameXpath = "//span[@style='font-size:40px;font-weight:bold;color:#000000;']";
+        String m_selfAssessmentXpath = "//span[text()='自我评价'][@style='color:#8866FF;font-size:14px;']";
+        String m_jobIntentionXPath = "//span[text()='求职意向'][@style='color:#8866FF;font-size:14px;']";
+
+        String m_workXpath = "//span[text()='工作经历'][@style='color:#8866FF;font-size:14px;']";
+        String m_educationXpath = "//span[text()='教育经历'][@style='color:#8866FF;font-size:14px;']";
+        String m_languageXpath = "//span[text()='语言能力'][@style='color:#8866FF;font-size:14px;']";
+        String m_projectXpath = "//span[text()='项目经验'][@style='color:#8866FF;font-size:14px;']";
+
+        //简历ID
+        Object[] ns = htmlNode.evaluateXPath(m_idXpath);
+        TagNode n = null;
+        String srid = "";
+        try{
+            n = (TagNode) ns[0];
+            srid = n.getText().toString().trim().substring(3);
+            if(srid.length() > 80){
+                srid = "";
+                logger.warn("简历ID异常");
+            }
+            resume.getMeta_info().getResume_tags().setSrid(srid);
+        }catch (Exception e){
+            logger.error("没有简历ID");
+        }
+
+        ResumeWrapper.TResume_info resumeInfo = resume.getResume_info();
+        //基本信息
+        ns = htmlNode.evaluateXPath(nameXpath);
+        n = (TagNode) ns[0];
+        String name = n.getText().toString().trim();
+        name = StringEscapeUtils.unescapeHtml(name);
+        resumeInfo.setName(name);
+
+        n = n.getParent().getParent().getChildTagList().get(1);
+        List<? extends BaseToken> children = n.getAllChildren();
+        ContentNode cNode = (ContentNode) children.get(0);
+        String[] strs = cNode.getContent().split("\\|");
+        for(String s : strs){
+            s = s.trim();
+            if(s.equals("男") || s.equals("女")){
+                resumeInfo.setGender_cnt(s);
+                resumeInfo.setGender(Utils.getGenderCodeFromString(s));
+            }else if(s.contains("婚")){
+                resumeInfo.setMarriage_cnt(s);
+            }else if(s.contains("月生")){
+                String birthday = s;
+                birthday = birthday.substring(0, birthday.length() - 1).replace(" ", "");
+                resumeInfo.setBirthday_cnt (birthday);
+                resumeInfo.setBirthday(Utils.parseTime(birthday, "yyyy年MM月"));
+            }else if(s.contains("户口：")){
+                String hukou = s;
+                hukou = hukou.substring(2);
+                resumeInfo.setHukou_cnt(hukou);
+            }else if(s.startsWith("现居住")){
+                String currentCity = s;
+                currentCity = currentCity.substring(4);
+                resumeInfo.setCur_city_cnt(currentCity);
+            }else{
+                int backgdCode = Utils.getBackgdCodeFromString(s);
+                if(backgdCode != -1){
+                    resumeInfo.setBackgd_cnt(s);
+                    resumeInfo.setBackgd(backgdCode);
+                }
+
+            }
+        }
+        try{
+            String phone = ((ContentNode) children.get(4)).getContent().toString().trim();
+            String email = ((TagNode)children.get(7)).getText().toString().trim();
+            resumeInfo.setMobilephone(phone);
+            resumeInfo.setEmail(email);
+
+            resume.getMeta_info().getResume_tags().setEmail(email);
+            resume.getMeta_info().getResume_tags().setName_mobile(name + "+" + phone);
+        }catch (Exception e){
+            logger.error("没有联系方式");
+        }
+
+        //投递信息
+        ResumeWrapper.TDeliver_info deliverInfo = new ResumeWrapper.TDeliver_info();
+        deliverInfo.setSrid(srid);
+        deliverInfo.setSid(m_sid);
+        resume.getDeliver_info().add(deliverInfo);
+
+        //自我评价
+        ns = htmlNode.evaluateXPath(m_selfAssessmentXpath);
+        if(ns.length == 0){
+            //没有自我评价
+        }else {
+            String selfAssessment = ((TagNode)ns[0]).getParent().getParent().getParent().getParent().getParent().getElementsByName("table", false)[1].getText().toString().trim();
+            List<ResumeWrapper.TResume_info.TSelf_assessment> self_assessments = resumeInfo.getSelf_assessment();
+            ResumeWrapper.TResume_info.TSelf_assessment tSelfAssessment = new ResumeWrapper.TResume_info.TSelf_assessment();
+            tSelfAssessment.setContent(selfAssessment);
+            tSelfAssessment.setContent_type("自我评价");
+            self_assessments.add(tSelfAssessment);
+        }
+
+        List<TagNode> childList = new ArrayList<TagNode>();
+        String firstJobTime = "";
+        Long firstJobTimestamp = new Long(0);
+        String lastJobTime = "";
+        Long lastJobTimestamp = new Long(0);
+        ns = htmlNode.evaluateXPath(m_workXpath);
+        if(ns.length == 0){
+            //logger.warn("没有工作经历");
+        }else{
+            List<ResumeWrapper.TResume_info.TWork> works = resumeInfo.getWork();
+            List<ResumeWrapper.TResume_info.TWork_cnt> workCnts = resumeInfo.getWork_cnt();
+            n = (TagNode)ns[0];
+            n = n.getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3).getChildTagList().get(0);
+
+            childList.clear();
+            childList = n.getChildTagList();
+            for(TagNode node : childList){
+                if(node.getAllChildren().size() != 2){
+                    continue;
+                }
+                ResumeWrapper.TResume_info.TWork work = new ResumeWrapper.TResume_info.TWork();
+                String workContent = node.getText().toString().replaceAll(" ", "").trim();
+                n = node.getChildTagList().get(0);
+                if(n.getText().toString().equals("")){
+                    continue;
+                }
+                String[] time = n.getText().toString().replace("：", "").split("--");
+                String stime = time[0].trim();
+                String etime = time[1].trim();
+
+                n = node.getChildTagList().get(1);
+                children.clear();
+                children = n.getAllChildren();
+                strs = ((ContentNode) children.get(0)).getContent().toString().split("\\|");
+                String company = strs[0].trim();
+                String jobOfWork = strs[strs.length - 1].trim();
+
+                strs = ((ContentNode) children.get(2)).getContent().toString().split("\\|");
+                for(String s : strs){
+                    s = s.trim();
+                    if(s.startsWith("规模:")){
+                        String companySizeCntOfWork = s.substring(3);
+                        work.setCompany_size_cnt(companySizeCntOfWork);
+                    }else if(s.contains("元/")){
+                        if(s.contains("-")) {
+                            work.setSalary_from(Utils.GetNumFromString(s.split("-")[0]));
+                            work.setSalary_to(Utils.GetNumFromString(s.split("-")[1]));
+                        }
+                        work.setSalary_cnt(s);
+                    }else{
+                        if(s.equals("国企") || s.equals("事业单位") || s.equals("外商独资")
+                                ||s.equals("代表处") || s.equals("合资") || s.equals("民营")
+                                ||s.equals("国家机关") || s.equals("股份制企业") || s.equals("其它")){
+                            work.setCompany_type_cnt(s);
+                        }else{
+                            work.setTrade(Utils.getJobTradeCodeFromString(s));
+                            work.setTrade_cnt(s);
+                        }
+
+                    }
+                }
+
+                String jobDescriptionOfWork = "";
+                for(int i = 4; i < children.size(); i++){
+                    BaseToken token = children.get(i);
+                    if(token instanceof ContentNode){
+                        jobDescriptionOfWork += ((ContentNode)token).getContent().toString();
+                    }
+                }
+                work.setCompany(company);
+                work.setStime(Utils.parseZhiLianTime(stime));
+                work.setEtime(Utils.parseZhiLianTime(etime));
+                if(firstJobTimestamp == 0){
+                    firstJobTime = stime;
+                    firstJobTimestamp = work.getStime();
+                }else{
+                    if(work.getStime() < firstJobTimestamp){
+                        firstJobTime = stime;
+                        firstJobTimestamp = work.getStime();
+                    }
+                }
+                if(lastJobTimestamp == 0){
+                    lastJobTime = etime;
+                    lastJobTimestamp = work.getEtime();
+                }else{
+                    if(work.getEtime() > lastJobTimestamp){
+                        lastJobTime = etime;
+                        lastJobTimestamp = work.getEtime();
+                    }
+                }
+
+                work.setJob_description(jobDescriptionOfWork);
+                work.setJob(jobOfWork);
+
+                work.setTime_cnt(stime + " - " + etime);
+                works.add(work);
+
+                ResumeWrapper.TResume_info.TWork_cnt workCnt = new ResumeWrapper.TResume_info.TWork_cnt();
+                workCnt.setContent(workContent);
+                workCnts.add(workCnt);
+            }
+        }
+
+        resumeInfo.setFst_job_date(firstJobTimestamp);
+        resumeInfo.setFst_job_date_cnt(firstJobTime);
+        resumeInfo.setLst_job_date(lastJobTimestamp);
+        resumeInfo.setLst_job_date_cnt(lastJobTime);
+
+
+        //教育经历
+        ns = htmlNode.evaluateXPath(m_educationXpath);
+        if(ns.length == 0){
+            //logger.warn("没有教育经历");
+        }else {
+            n = (TagNode)ns[0];
+            n = n.getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3).getChildTagList().get(0);
+            List<ResumeWrapper.TResume_info.TEducation> educations = resumeInfo.getEducation();
+            childList.clear();
+            childList = n.getChildTagList();
+            String educationStr = "";
+            for(TagNode node : childList){
+                children.clear();
+                children = node.getChildTagList().get(0).getAllChildren();
+                for(BaseToken token : children){
+                    if(token instanceof ContentNode){
+                        ResumeWrapper.TResume_info.TEducation education = new ResumeWrapper.TResume_info.TEducation();
+                        cNode = (ContentNode)token;
+                        strs = cNode.getContent().split("：");
+                        String[] time = strs[0].split("--");
+                        String stime = time[0].trim();
+                        String etime = time[1].trim();
+
+                        education.setStime(Utils.parseZhiLianTime(stime));
+                        education.setEtime(Utils.parseZhiLianTime(etime));
+                        education.setTime_cnt(stime + " - " + etime);
+
+                        strs = strs[1].split("\\|");
+                        String school = StringEscapeUtils.unescapeHtml(strs[0]).trim();
+                        education.setSchool(school);
+                        educationStr +=stime + " - " + etime + " " + school;
+                        if(strs.length >= 2){
+                            String speciality = StringEscapeUtils.unescapeHtml(strs[1]).trim().replace("\u00a0", "");
+                            education.setSpeciality(speciality);
+                            educationStr += " " + speciality;
+                        }
+
+                        if(strs.length >= 3){
+                            String backgdCnt = StringEscapeUtils.unescapeHtml(strs[2].trim().replace("\u00a0", ""));
+                            education.setBackgd(Utils.getBackgdCodeFromString(backgdCnt).toString());
+                            education.setBackgd_cnt(backgdCnt);
+                            educationStr += " " + backgdCnt + " ";
+                        }
+                        educations.add(education);
+                    }
+                }
+            }
+            resumeInfo.setEducation_cnt(educationStr);
+        }
+
+        ns = htmlNode.evaluateXPath(m_languageXpath);
+        if(ns.length == 0){
+            //logger.warn("没有语言能力 ");
+        }else{
+            n = (TagNode)ns[0];
+            n = n.getParent().getParent().getParent().getParent().getParent().getChildTagList().get(3).getChildTagList().get(0);
+            childList.clear();
+            childList = n.getChildTagList();
+            for(TagNode node : childList){//tr
+                ResumeWrapper.TResume_info.TLanguage language = new ResumeWrapper.TResume_info.TLanguage();
+                node = node.getChildTagList().get(0);//td
+                strs = node.getText().toString().split("：");
+                String languageCnt = strs[0].trim();
+                if(languageCnt.equals("其他")){
+                    continue;
+                }
+                language.setLang_cnt(languageCnt);
+                strs = strs[1].split("\\|");
+                String literacyCnt = strs[0].trim();
+                literacyCnt = literacyCnt.substring(literacyCnt.length() - 2);
+                language.setLiteracy_cnt(literacyCnt);
+                if(strs.length >= 2){
+                    String verbalCnt = strs[1].trim();
+                    verbalCnt = verbalCnt.substring(verbalCnt.length() - 2);
+                    language.setVerbal_cnt(verbalCnt);
+                }
+
+                resumeInfo.getLanguage().add(language);
+            }
+        }
+
+        return true;
+    }
+}

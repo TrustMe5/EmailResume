@@ -1,0 +1,7 @@
+org\emailresume\Main.class
+org\emailresume\ParseTask.class
+org\emailresume\DBEmailResume.class
+org\emailresume\DBEmail.class
+org\emailresume\ResumeDocChecker.class
+org\emailresume\EmailCrawling.class
+org\emailresume\MongoHelper.class

@@ -1,0 +1,6 @@
+org\emailresume\Main.class
+org\emailresume\bean\EmailListBean$Data.class
+org\emailresume\controller\VerifyController.class
+org\emailresume\controller\EmailController.class
+org\emailresume\bean\EmailListBean.class
+org\emailresume\Main$1.class

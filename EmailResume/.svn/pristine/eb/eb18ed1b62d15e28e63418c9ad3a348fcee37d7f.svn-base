@@ -1,0 +1,638 @@
+package org.emailresume.htmlparser;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.emailresume.common.TransferStringToTimeStamp;
+import org.jsoup.*;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+/**
+ * Created by Administrator on 2016/9/27 0027.
+ */
+public class QianChengParser_1 implements Parser {
+    private static final org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(QianChengParser.class);
+    static ResumeWrapper rWrapper = null;
+    static String fst_job_date_cnt = "";
+    static long fst_job_date = 0;
+    static String lst_job_date_cnt = "";
+    static long lst_job_date = 0;
+
+    public static String ReadResumeContent(String filePath) throws IOException {
+        String encoding = "utf-8";
+        File file = new File(filePath);
+        if (file.isFile() && file.exists()) { // 判断文件是否存在
+            InputStreamReader read = new InputStreamReader(new FileInputStream(file), encoding);// 考虑到编码格式
+            BufferedReader bufferedReader = new BufferedReader(read);
+            String lineTxt;
+            StringBuffer sb = new StringBuffer();
+            while ((lineTxt = bufferedReader.readLine()) != null) {
+                sb.append(lineTxt);
+            }
+            read.close();
+            return sb.toString();
+        }
+        return "";
+    }
+
+    private static String GetNumFromString(String str) {
+        str=str.trim();
+        String str2="";
+        if(str != null && !"".equals(str)){
+            for(int i=0;i<str.length();i++){
+                if(str.charAt(i)>=48 && str.charAt(i)<=57){
+                    str2+=str.charAt(i);
+                }
+            }
+        }
+        return str2;
+    }
+
+    private static void getResumeInfo(Document doc) throws ParseException { // 从document中抽取出简历信息
+        String name;
+        String gender;
+        String birthday;
+        String age;
+        String live_city;
+        String phone;
+        String email;
+        String self_assessment;
+        String marriage_cnt;
+        String hukou_cnt;
+        String resumeId = "";
+        String backgd;
+        int hukou;
+        long birthdaytimestamp;
+        Elements tag_name = doc.select("td.name");
+        name = tag_name.get(0).text();
+        Element tag_id = doc.select("td.icard").get(0);
+        if(tag_id.text().contains("ID:")){
+            resumeId = tag_id.text().substring(3);
+        }
+        phone = tag_name.get(0).parent().nextElementSibling().child(1).text();
+        email = tag_name.get(0).parent().nextElementSibling().child(2).text();
+        gender = tag_name.get(0).parent().nextElementSibling().nextElementSibling().select("p").get(0).text().split("\\|")[0];
+        age = tag_name.get(0).parent().nextElementSibling().nextElementSibling().select("p").get(0).text().split("\\|")[1];
+        live_city = tag_name.get(0).parent().nextElementSibling().nextElementSibling().text().split("\\|")[2].substring(3);
+        birthday = Integer.toString(2016 - Integer.parseInt(GetNumFromString(age))) + "." + String.valueOf((int) (Math.random() * 12) + 1) + "." + String.valueOf((int) (Math.random() * 30) + 1);
+        birthdaytimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(birthday);
+        Elements td = doc.select("td.keys");
+        for(int i=0; i<td.size(); i++){
+            if(td.get(i).text().equals("户口/国籍：")){
+                hukou_cnt = td.get(i).nextElementSibling().text();
+                hukou = Utils.getCityCodeFromString(hukou_cnt);
+                rWrapper.getResume_info().setHukou_cnt(hukou_cnt);
+                rWrapper.getResume_info().setHukou(hukou);
+                break;
+            }
+        }
+        for(int i=0; i<td.size(); i++){
+            if(td.get(i).text().equals("婚姻状况：")){
+                marriage_cnt = td.get(i).nextElementSibling().text();
+                rWrapper.getResume_info().setMarriage_cnt(marriage_cnt);
+                break;
+            }
+        }
+        for(int i=0; i<td.size(); i++){
+            if(td.get(i).text().equals("学历/学位：")){
+                backgd = td.get(i).nextElementSibling().text();
+                rWrapper.getResume_info().setBackgd_cnt(backgd);
+                rWrapper.getResume_info().setBackgd(Utils.getBackgdCodeFromString(backgd));
+                break;
+            }
+        }
+
+        for(int i=0; i<td.size(); i++){
+            if(td.get(i).text().equals("自我评价：")){
+                self_assessment = td.get(i).nextElementSibling().text();
+                ResumeWrapper.TResume_info.TSelf_assessment tSelf_assessment = new ResumeWrapper.TResume_info.TSelf_assessment();
+                tSelf_assessment.setContent_type("自我评价");
+                tSelf_assessment.setContent(self_assessment);
+                rWrapper.getResume_info().getSelf_assessment().add(tSelf_assessment);
+                break;
+            }
+        }
+        String[] cityList = live_city.split("-");
+        for (String city : cityList) {
+            rWrapper.getResume_info().setCur_city_id(Utils.getCityCodeFromString(city));
+        }
+        rWrapper.getResume_info().setName(name);
+        rWrapper.getResume_info().setFst_job_date_cnt(fst_job_date_cnt);
+        rWrapper.getResume_info().setFst_job_date(fst_job_date);
+        rWrapper.getResume_info().setLst_job_date_cnt(lst_job_date_cnt);
+        rWrapper.getResume_info().setLst_job_date(lst_job_date);
+        rWrapper.getResume_info().setGender(Utils.getGenderCodeFromString(gender));
+        rWrapper.getResume_info().setGender_cnt(gender);
+        rWrapper.getResume_info().setBirthday_cnt(birthday);
+        rWrapper.getResume_info().setBirthday(birthdaytimestamp);
+        rWrapper.getResume_info().setMobilephone(phone);
+        rWrapper.getResume_info().setEmail(email);
+        rWrapper.getResume_info().setCur_city_cnt(live_city);
+        rWrapper.getMeta_info().getResume_tags().setEmail(email);
+        rWrapper.getMeta_info().getResume_tags().setName_mobile(name + "+" + phone);
+        rWrapper.getMeta_info().getResume_tags().setSrid(resumeId);
+    }
+
+
+    private static void getJobIntention(Document doc) { // 从document中抽取出求职意向
+        String city;
+        String salary = "";
+        String state;
+        String job;
+        String job_nature = "";
+        String arrival_time = "";
+        String resumeId = "";
+        String trade;
+        String hope_salary_from = "";
+        String hope_salary_to = "";
+        String cur_salart_cnt = "";
+        String cur_salary_from = "";
+        String cur_salary_to = "";
+        List<String> city_list = new ArrayList<String>();
+        List<String> cityId_list = new ArrayList<String>();
+        List<String> job_list = new ArrayList<String>();
+        List<String> jobId_list = new ArrayList<String>();
+        List<String> trade_cnt_list = new ArrayList<String>();
+        List<String> trade_list = new ArrayList<String>();
+        Element tag_id = doc.select("td.icard").get(0);
+        if(tag_id.text().contains("ID:")){
+            resumeId = tag_id.text().substring(3);
+            rWrapper.getMeta_info().getResume_tags().setSrid(resumeId);
+        }
+        ResumeWrapper.TDeliver_info deliverInfo = new ResumeWrapper.TDeliver_info();
+        deliverInfo.setSrid(resumeId);
+        deliverInfo.setSid(2);
+        state = doc.select("td.name").get(0).parent().nextElementSibling().child(0).text();   //当前状态
+        Elements jobdiv = doc.select("td.plate1");
+        for (int m = 0; m < jobdiv.size(); m++) {
+            if (jobdiv.get(m).text().contains("求职意向")) {
+                Elements jobintention = jobdiv.get(m).parent().nextElementSibling().select("td.keys");
+                for(int i=0; i<jobintention.size(); i++){
+                    if(jobintention.get(i).text().equals("地点：")){
+                        city = jobintention.get(i).nextElementSibling().text().replace("\u00a0"," ");
+                        String[] ss = city.split(" ");
+                        for (String s : ss) {
+                            city_list.add(s);
+                            cityId_list.add(Utils.getCityCodeFromString(s).toString());
+                        }
+                    }
+                    if(jobintention.get(i).text().equals("期望薪资：")){
+                        salary = jobintention.get(i).nextElementSibling().text();
+                    }
+                    if(jobintention.get(i).text().equals("行业：")){
+                        trade = jobintention.get(i).nextElementSibling().text().replace("\u00a0"," ");
+                        String[] trade1 = trade.split(" ");
+                        for (String tra : trade1) {
+                            trade_cnt_list.add(tra);
+                            trade_list.add(Utils.getJobTradeCodeFromString(tra));
+                        }
+                    }
+                    if(jobintention.get(i).text().equals("职能：")){
+                        job = jobintention.get(i).nextElementSibling().text().replace("\u00a0"," ");
+                        if (job.split(" ").length > 1) {
+                            for (int j = 0; j < job.split(" ").length; j++) {
+                                job_list.add(job.split(" ")[j]);
+                                jobId_list.add(Utils.getJobCodeFromString(job.split(" ")[j]));
+                            }
+                        } else {
+                            job_list.add(job);
+                            jobId_list.add(Utils.getJobCodeFromString(job));
+                        }
+                    }
+                    if(jobintention.get(i).text().equals("到岗时间：")){
+                        arrival_time = jobintention.get(i).nextElementSibling().text();
+                    }
+                    if(jobintention.get(i).text().equals("工作类型：")){
+                        job_nature = jobintention.get(i).nextElementSibling().text();
+                    }
+                }
+                if(salary.contains("元/年")){                 //期望薪资
+                    if(salary.contains("-")) {
+                        hope_salary_from = "年薪" + GetNumFromString(salary.split("-")[0]) + "万";
+                        hope_salary_to = "年薪" + GetNumFromString(salary.split("-")[1]) + "万";
+                    }else if(salary.contains("以下")){
+                        hope_salary_from = "0";
+                        hope_salary_to = "年薪2万";
+                    }else if(salary.contains("以上")){
+                        hope_salary_from = "年薪100万";
+                        hope_salary_to = "";
+                    }
+                } else if(salary.contains("元/月")){
+                    if(salary.contains("-")) {
+                        hope_salary_from = "月薪" + GetNumFromString(salary.split("-")[0]);
+                        hope_salary_to = "月薪" + GetNumFromString(salary.split("-")[1]);
+                    }else if(salary.contains("以下")){
+                        hope_salary_from = "0";
+                        hope_salary_to = "月薪1500";
+                    }else if(salary.contains("以上")){
+                        hope_salary_from = "月薪100000";
+                        hope_salary_to = "";
+                    }
+                }
+                Elements tag_plate1 = doc.select("td.plate1");
+                for(int j=0; j<tag_plate1.size(); j++){
+                    if(tag_plate1.get(j).text().contains("目前年收入")){
+                        cur_salart_cnt = "目前年收入" + tag_plate1.get(j).child(0).text().replace("\u00a0","");
+                        break;
+                    }
+                }
+                ResumeWrapper.TDeliver_info.TJob_intension jobIntension = new ResumeWrapper.TDeliver_info.TJob_intension();
+                jobIntension.setCity_cnt(city_list);
+                jobIntension.setCity(cityId_list);
+                jobIntension.setArrival_time(arrival_time);
+                jobIntension.setJob_nature_cnt(job_nature);
+                jobIntension.setJob_nature(Utils.getJobNatureCodeFromString(job_nature));
+                jobIntension.setJob_cnt(job_list);
+                jobIntension.setJob(jobId_list);
+                jobIntension.setState_cnt(state);
+                jobIntension.setTrade(trade_list);
+                jobIntension.setHope_salary_from(hope_salary_from);
+                jobIntension.setHope_salary_to(hope_salary_to);
+                jobIntension.setHope_salary_cnt(salary);
+                jobIntension.setCur_salary_cnt(cur_salart_cnt);
+                jobIntension.setCur_salary_from(cur_salary_from);
+                jobIntension.setCur_salary_to(cur_salary_to);
+                jobIntension.setTrade_cnt(trade_cnt_list);
+                deliverInfo.setJob_intension(jobIntension);
+                break;
+            }
+        }
+        rWrapper.getDeliver_info().add(deliverInfo);
+    }
+
+    private static void getWorkExperience(Document doc) throws ParseException { // 从document中抽取出工作经历
+        String stime;
+        String etime;
+        long stimestamp;
+        long etimestamp;
+        String time_cnt;   // 工作时间原文
+        String company;
+        String company_type;
+        String company_size_cnt;
+        String location = "";
+        String department; // 部门
+        String trade;
+        String job;
+        String job_description ;
+        String report_to = ""; // 汇报对象
+        String work_content;
+        Elements workexper1 = doc.select("td.plate1");
+        for (int k = 0; k < workexper1.size(); k++) {
+            if (workexper1.get(k).text().equals("工作经验")) {
+                Elements workexper = workexper1.get(k).parent().nextElementSibling().select("tbody").get(0).children();
+                int tr_num = workexper.size();
+                int work_num = tr_num;
+                rWrapper.getMeta_info().setWorks(work_num);
+                for (int j = 0; j < tr_num; j++) {
+                    trade = "";
+                    company_size_cnt = "";
+                    company_type = "";
+                    department = "";
+                    job_description = "";
+                    time_cnt = workexper.get(j).select("td.time").get(0).text();
+                    stime = time_cnt.split("-")[0];
+                    etime = time_cnt.split("-")[1];
+                    stimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(stime);
+                    etimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(etime);
+                    if(j == 0){
+                        lst_job_date_cnt = etime;
+                        lst_job_date = etimestamp;
+                    }
+                    if(j == tr_num - 1){
+                        fst_job_date_cnt = stime;
+                        fst_job_date = stimestamp;
+                    }
+                    String job_dep = workexper.get(j).select("td.rtbox").get(0).text();
+                    job = job_dep.split("\\|")[0];
+                    if(job_dep.split("\\|").length>1){
+                        department = job_dep.split("\\|")[1];
+                    }
+                    company = workexper.get(j).select("td.time").get(0).parent().nextElementSibling().text().replace("\u00a0"," ").split(" ")[0];
+                    Element tag_company = workexper.get(j).select("td.time").get(0).parent().nextElementSibling();
+                    if(tag_company.parent().children().size() >= 3 && !tag_company.nextElementSibling().text().contains("工作描述：")){
+                        String con1 = workexper.get(j).select("td.time").get(0).parent().nextElementSibling().nextElementSibling().text();
+                        String [] part = con1.split("\\|");
+                        if(part.length == 3){
+                            trade = part[0];
+                            company_size_cnt = part[1];
+                            company_type = part[2];
+                        }else if(part.length == 2){               // 哈哈
+                            if(part[0].contains("人")){
+                                company_size_cnt = part[0];
+                                company_type = part[1];
+                            }else{
+                                trade = part[0];
+                                company_type = part[1];
+                            }
+                        }
+                    }
+                    for(int n=0; n<workexper.get(j).select("td.keys").size(); n++){
+                        if(workexper.get(j).select("td.keys").get(n).text().equals("工作描述：")){
+                            job_description = workexper.get(j).select("td.keys").get(n).nextElementSibling().text();
+                        }
+                    }
+                    work_content = workexper.get(j).text();
+                    ResumeWrapper.TResume_info.TWork tWork = new ResumeWrapper.TResume_info.TWork();
+                    tWork.setStime(stimestamp);
+                    tWork.setEtime(etimestamp);
+                    tWork.setTime_cnt(time_cnt);
+                    tWork.setCompany(company);
+                    tWork.setCompany_type_cnt(company_type);
+                    tWork.setCompany_size_cnt(company_size_cnt);
+                    tWork.setLocation(location);
+                    tWork.setDepartment(department);
+                    tWork.setTrade_cnt(trade);
+                    tWork.setTrade(Utils.getJobTradeCodeFromString(trade));
+                    tWork.setJob(job);
+                    tWork.setJob_description(job_description);
+                    tWork.setReport_to(report_to);
+                    rWrapper.getResume_info().getWork().add(tWork);
+                    ResumeWrapper.TResume_info.TWork_cnt tWork_cnt = new ResumeWrapper.TResume_info.TWork_cnt();
+                    tWork_cnt.setContent(work_content);
+                    rWrapper.getResume_info().getWork_cnt().add(tWork_cnt);
+                }
+                break;
+            }
+        }
+    }
+
+    private static void getEducationExperience(Document doc) throws ParseException { // 从document中抽取出教育经历
+        String stime;
+        String etime;
+        long stimestamp;
+        long etimestamp;
+        String time_cnt;
+        String school;
+        String speciality;
+        String degree_cnt;
+        String description;
+        String education_cnt;
+        Elements td = doc.select("td.plate1");
+        for (int i = 0; i < td.size(); i++) {
+            if (td.get(i).text().equals("教育经历")) {
+                Elements educontent = td.get(i).parent().nextElementSibling().select("tbody").get(0).children();
+                for (int j = 0; j < educontent.size(); j++) {
+                    ResumeWrapper.TResume_info.TEducation tEducation = new ResumeWrapper.TResume_info.TEducation();
+                    time_cnt = educontent.get(j).select("td.time").get(0).text();
+                    stime = time_cnt.split("-")[0];
+                    etime = time_cnt.split("-")[1];
+                    stimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(stime);
+                    etimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(etime);
+                    school = educontent.get(j).select("td.rtbox").get(0).text();
+                    degree_cnt = educontent.get(j).select("td.tb1").get(0).text().split("\\|")[0];
+                    if(educontent.get(j).select("td.tb1").get(0).text().split("\\|").length>1){
+                        speciality = educontent.get(j).select("td.tb1").get(0).text().split("\\|")[1];
+                        tEducation.setSpeciality(speciality);
+                    }
+                    for(int k=0; k<educontent.get(j).select("td.keys").size(); k++){
+                        if(educontent.get(j).select("td.keys").get(k).text().equals("专业描述：")){
+                            description = educontent.get(j).select("td.keys").get(k).nextElementSibling().text();
+                            tEducation.setDescription(description);
+                        }
+                    }
+                    tEducation.setTime_cnt(time_cnt);
+                    tEducation.setStime(stimestamp);
+                    tEducation.setEtime(etimestamp);
+                    tEducation.setSchool(school);
+                    tEducation.setBackgd_cnt(degree_cnt);
+                    tEducation.setBackgd(Utils.getBackgdCodeFromString(degree_cnt).toString());
+                    rWrapper.getResume_info().getEducation().add(tEducation);
+                }
+                education_cnt = td.get(i).parent().nextElementSibling().text();
+                rWrapper.getResume_info().setEducation_cnt(education_cnt);
+                break;
+            }
+        }
+    }
+
+
+    private static void getProjectExperience(Document doc) throws ParseException {           //抽取出项目经历
+        String stime;
+        String etime;
+        long stimestamp;
+        long etimestamp;
+        String time_cnt;
+        String project_name;    //项目名字
+        String description;   //项目描述
+        String duty;      //职责描述
+        String dev_tools;  //开发工具
+        String env_software; //软件环境
+        String env_hardware;   //硬件环境
+        String project_cnt;
+        String row1;
+        int project_num = 0;
+        Elements td = doc.select("td.plate1");
+        for (int i = 0; i < td.size(); i++) {
+            if (td.get(i).text().equals("项目经验")) {
+                Elements projectexp = td.get(i).parent().nextElementSibling().select("tbody").get(0).children();
+                for (int j = 0; j < projectexp.size(); j++) {
+                    ResumeWrapper.TResume_info.TProjects tProjects = new ResumeWrapper.TResume_info.TProjects();
+                    time_cnt = projectexp.get(j).select("td.time").get(0).text();
+                    stime = time_cnt.split("-")[0];
+                    etime = time_cnt.split("-")[1];
+                    stimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(stime);
+                    etimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(etime);
+                    project_name = projectexp.get(j).select("td.rtbox").get(0).text();
+                    Elements tag_key = projectexp.get(j).select("td.keys");
+                    for (int k = 0; k < tag_key.size(); k++) {
+                        if (tag_key.get(k).text().equals("项目描述：")) {
+                            description = tag_key.get(k).nextElementSibling().text();
+                            tProjects.setDescription(description);
+                        }
+                        if (tag_key.get(k).text().equals("责任描述：")) {
+                            duty = tag_key.get(k).nextElementSibling().text();
+                            tProjects.setDuty(duty);
+                        }
+
+                    }
+                    project_cnt = projectexp.get(j).text();
+                    tProjects.setStime(stimestamp);
+                    tProjects.setEtime(etimestamp);
+                    tProjects.setTime_cnt(time_cnt);
+                    tProjects.setProject_name(project_name);
+                    rWrapper.getResume_info().getProjects().add(tProjects);
+                    ResumeWrapper.TResume_info.TProjects_cnt tProjects_cnt = new ResumeWrapper.TResume_info.TProjects_cnt();
+                    tProjects_cnt.setContent(project_cnt);
+                    rWrapper.getResume_info().getProjects_cnt().add(tProjects_cnt);
+                    project_num += 1;
+                }
+            rWrapper.getMeta_info().setProjects(project_num);
+            break;
+        }
+            }
+        }
+
+    private static void getTrainingExperience(Document doc) throws ParseException{
+        long stimestamp;
+        long etimestamp;
+        String time_cnt;
+        String agency;    //机构名字
+        String cer_name;   //证书名字
+        String course;    //课程名字
+        String description;
+        String address;
+        String training_cnt;
+        Elements td = doc.select("td.tit");
+        for(int i=0;i < td.size();i++){
+            if (td.get(i).text().equals("培训经历")) {
+                Element train_tbody = td.get(i).parent().parent();
+                training_cnt = train_tbody.text().substring(5);
+                rWrapper.getResume_info().setTraining_cnt(training_cnt);
+                int train_num = train_tbody.children().size() - 1;
+                for(int j=1; j<=train_num; j++){
+                    agency = "";
+                    address = "";
+                    description = "";
+                    time_cnt = train_tbody.child(j).select("td.time").get(0).text();
+                    stimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(time_cnt.split("--")[0]);
+                    etimestamp = TransferStringToTimeStamp.transferStringToTimeStamp(time_cnt.split("--")[1]);
+                    course = train_tbody.child(j).select("td.rtbox").get(0).text();
+                    Elements tag_keys = train_tbody.child(j).select("td.keys");
+                    for(int k=0; k<tag_keys.size(); k++){
+                        if(tag_keys.get(k).text().equals("培训机构：")){
+                            agency = tag_keys.get(k).nextElementSibling().text();
+                        }
+                        if(tag_keys.get(k).text().equals("培训地点：")){
+                            address = tag_keys.get(k).nextElementSibling().text();
+                        }
+                        if(tag_keys.get(k).text().equals("培训描述：")){
+                            description = tag_keys.get(k).nextElementSibling().text();
+                        }
+                    }
+                    ResumeWrapper.TResume_info.TTraining tTraining = new ResumeWrapper.TResume_info.TTraining();
+                    tTraining.setTime_cnt(time_cnt);
+                    tTraining.setStime(stimestamp);
+                    tTraining.setEtime(etimestamp);
+                    tTraining.setAddress(address);
+                    tTraining.setAgency(agency);
+                    tTraining.setCourse(course);
+                    tTraining.setDescription(description);
+                    rWrapper.getResume_info().getTrainings().add(tTraining);
+                }
+                break;
+            }
+        }
+    }
+
+    private static void getLanguageSkill(Document doc) throws ParseException {
+        String language_cnt;
+        String lang_cnt;
+        String verbal = ""; //听说能力
+        String verbal_cnt;
+        String literacy = ""; //读写能力
+        String literacy_cnt;
+        String all_level = "";
+        String lang_level = "";
+        Elements td = doc.select("td.tit");
+        for (int i = 0; i < td.size(); i++) {
+            if (td.get(i).text().equals("技能/语言")) {
+                String language_content = "";
+                Element skill_tbody = td.get(i).parent().nextElementSibling().select("tbody").get(0);
+                Elements tag_skills = skill_tbody.select("td.skill");
+                int skill_num = tag_skills.size();
+                for(int j=0; j<skill_num; j++){
+                    lang_cnt = tag_skills.get(j).text();
+                    if(lang_cnt.contains("语") || lang_cnt.contains("普通话")){
+                        ResumeWrapper.TResume_info.TLanguage tLanguage = new ResumeWrapper.TResume_info.TLanguage();
+                        all_level = tag_skills.get(j).nextElementSibling().text();
+                        tLanguage.setLang_cnt(lang_cnt);
+                        tLanguage.setAll_level(all_level);
+                        rWrapper.getResume_info().getLanguage().add(tLanguage);
+                        language_content += lang_cnt + " " + all_level + " ";
+                    }
+                }
+                rWrapper.getResume_info().setLanguage_cnt(language_content);
+                break;
+            }
+        }
+    }
+
+    private static void getCertificate(Document doc) throws ParseException {
+        String cer_name;
+        String issued ;
+        String description;
+        String certification_cnt;
+        Elements td = doc.select("td.tit");
+        for (int i = 0; i < td.size(); i++) {
+            if (td.get(i).text().equals("证书")) {
+                Element cer_tbody = td.get(i).parent().parent();
+                certification_cnt = cer_tbody.text().substring(3);
+                rWrapper.getResume_info().setCertification_cnt(certification_cnt);
+                int cer_num = cer_tbody.children().size() - 1;
+                for(int j=1; j<=cer_num; j++){
+                    issued = cer_tbody.child(j).select("td.time").get(0).text();
+                    cer_name = cer_tbody.child(j).select("td.rtbox").get(0).text();
+                    description = cer_tbody.child(j).text();
+                    ResumeWrapper.TResume_info.TCertification tCertification = new ResumeWrapper.TResume_info.TCertification();
+                    tCertification.setIssued(issued);
+                    tCertification.setCer_name(cer_name);
+                    tCertification.setDescription(description);
+                    rWrapper.getResume_info().getCertification().add(tCertification);
+                }
+                break;
+            }
+        }
+    }
+
+    public boolean parse(String filePath, ResumeWrapper resume) {
+        try {
+            String htmlContent = org.emailresume.common.Utils.readFileByBytes(filePath);
+            rWrapper = resume;
+            Document doc = Jsoup.parse(htmlContent);
+            parseHtml(doc);
+            if(rWrapper.getResume_info().getWork().isEmpty() || rWrapper.getResume_info().getEducation().isEmpty()) {
+                if (rWrapper.getResume_info().getWork().isEmpty() && rWrapper.getResume_info().getEducation().isEmpty()) {
+                    String server_ip = org.emailresume.common.Utils.getIP();
+                    // 如果工作和教育都没有解析出来，则将该简历信息插入数据库
+//                    InsertDataToDB.insertDataToDB(server_ip, filePath, "2");
+                    logger.error("file error: " + filePath);
+                    return false;
+                }else{
+                    logger.warn("该简历缺少工作或教育字段：" + filePath);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+        return true;
+    }
+
+    private static void parseHtml(Document doc) throws ParseException {
+
+        // 获取求职意向
+        getJobIntention(doc);
+
+        // 获取工作经历
+        getWorkExperience(doc);
+
+        // 获得教育经历
+        getEducationExperience(doc);
+
+        // 获取简历信息
+        getResumeInfo(doc);
+
+        // 获取项目经历
+        getProjectExperience(doc);
+
+        //获取语言能力
+        getLanguageSkill(doc);
+
+        // 获取证书内容
+        getCertificate(doc);
+
+        // 获取培训经历
+        getTrainingExperience(doc);
+
+    }
+
+}

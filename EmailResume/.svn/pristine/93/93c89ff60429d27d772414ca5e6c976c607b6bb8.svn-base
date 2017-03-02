@@ -1,0 +1,124 @@
+package org.emailresume.common;
+
+import com.sun.mail.pop3.POP3Folder;
+import com.sun.mail.pop3.POP3Store;
+import org.apache.commons.mail.util.MimeMessageParser;
+
+import javax.mail.AuthenticationFailedException;
+import javax.mail.Folder;
+import javax.mail.MessagingException;
+import javax.mail.Session;
+import javax.mail.internet.MimeMessage;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Properties;
+
+public class POP3Worker {
+    private POP3Store m_store = null;
+    private POP3Folder m_folder = null;
+    final private static int m_minEmailCount = 50;
+
+    private String m_errorMessage;
+
+    public String getLoginErrorMessage(){
+        return m_errorMessage;
+    }
+
+    public POP3Store getStore(){
+        return m_store;
+    }
+
+    public POP3Folder getFolder() throws MessagingException{
+        if(m_folder == null){
+            m_folder = (POP3Folder) m_store.getFolder("INBOX");
+            m_folder.open(Folder.READ_ONLY);
+        }
+        return m_folder;
+    }
+
+    public boolean connect(String username, String password){
+        boolean result = true;
+        try {
+            EmailInfo info = new EmailInfo();
+            info.m_username = username;
+            info.m_password = password;
+            info.getServerInfo(username.split("@")[1]);
+            String protocol = "pop3";
+
+            Properties props = new Properties();
+            props.put("mail.pop3.ssl.enable", info.m_ssl);
+            props.put("mail.pop3.host", info.m_popServer);
+            props.put("mail.pop3.port", info.m_port);
+
+            Session session = Session.getInstance(props);
+            //session.setDebug(true);
+            m_store = (POP3Store) session.getStore(protocol);
+            m_store.connect(username, password);
+        } catch (AuthenticationFailedException e){
+            e.printStackTrace();
+            m_errorMessage = e.toString();
+            result = false;
+        } catch (Exception e){
+            e.printStackTrace();
+            m_errorMessage = e.toString();
+            result = false;
+        }
+        return result;
+    }
+
+    //查看3天内的邮件是否有30封是简历
+    public boolean verify(){
+        boolean result = false;
+        try {
+            if(m_store == null){
+                throw new Exception("验证邮箱失败，没有pop3Folder,");
+            }
+            POP3Folder folder = (POP3Folder) m_store.getFolder("INBOX");
+            if(folder == null){
+                throw new Exception("验证邮箱失败，没有pop3Folder,");
+            }
+            Calendar cal = Calendar.getInstance();
+            cal.add(Calendar.DATE, -7);
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+            Long time = format.parse(format.format(cal.getTime())).getTime() / 1000;
+
+            folder.open(Folder.READ_ONLY);
+            int count = 0;
+            int size = folder.getMessageCount();
+            for(int i = size; i > 0; i--){
+                MimeMessage msg = (MimeMessage) folder.getMessage(i);
+                Long sendTime = msg.getSentDate().getTime() / 1000;
+                if(sendTime < time){
+                    break;
+                }
+                MimeMessageParser parser = new MimeMessageParser(msg);
+                String subject = parser.getSubject();
+                String from = parser.getFrom();
+                if(Utils.isEmailResume(subject, from)){
+                    count++;
+                    if(count >= m_minEmailCount){
+                        result = true;
+                        break;
+                    }
+                }
+            }
+            int i = 0;
+        }catch (Exception e){
+            e.printStackTrace();
+            result = false;
+        }
+
+        return result;
+    }
+
+    public void clean(){
+        try {
+            if(m_store != null)
+                m_store.close();
+            if(m_folder != null)
+                m_store.close();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+}

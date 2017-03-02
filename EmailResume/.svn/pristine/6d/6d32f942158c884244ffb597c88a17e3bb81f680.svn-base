@@ -1,0 +1,38 @@
+package org.emailresume.common;
+
+import org.emailresume.common.*;
+import net.mikesu.fastdfs.*;
+import java.io.File;
+import java.io.FileWriter;
+
+public class DFSHelper {
+    static final String m_dfsUrl = "http://upload.fenjianli.com/home/putfile.htm";
+    static final FastdfsClient fastdfsClient = FastdfsClientFactory.getFastdfsClient();
+    public static String uploadFile(String content, String fileName) throws Exception{
+//        String fileUrlJson = uploadToFastDFS(m_dfsUrl, content, fileName);
+//        Document fastDFSUrlDoc = Document.parse(fileUrlJson);
+//        return fastDFSUrlDoc.get("result").toString();
+        File f = new File("G:/" + fileName);
+        FileWriter writer = new FileWriter(f);
+        writer.write(content);
+        writer.flush();
+        writer.close();
+        return uploadFile(f);
+
+    }
+
+    public static String uploadFile(File file) throws Exception{
+        String fileId = fastdfsClient.upload(file);
+        //System.out.println("fileId:"+fileId);
+        String url = fastdfsClient.getUrl(fileId);
+        //System.out.println("url:"+url);
+        //fastdfsClient.close();
+        return url;
+
+    }
+
+    private static String uploadToFastDFS(String url, String fileContent, String fileName){
+        return HttpRequest.postFileAsFormTable(url, fileContent, fileName);
+    }
+
+}
